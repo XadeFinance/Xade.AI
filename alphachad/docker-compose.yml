@@ -1,0 +1,42 @@
+version: "3.9"
+services:
+  web:
+    build: .  # Build context is now the directory containing docker-compose.yml (alphachad)
+    ports:
+      - "8000:8000"
+    environment:
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - SUPABASE_URL=${SUPABASE_URL}
+      - SUPABASE_ANON_KEY=${SUPABASE_ANON_KEY}
+    depends_on:
+      - redis
+
+  redis:
+    image: "redis:latest"
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+
+  celery-beat:
+    build: . # Build context is still alphachad directory
+    command: celery -A celery_app beat -l info -s celerybeat-schedule.BeatScheduler
+    environment:
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - SUPABASE_URL=${SUPABASE_URL}
+      - SUPABASE_ANON_KEY=${SUPABASE_ANON_KEY}
+    depends_on:
+      - redis
+
+  celery-worker:
+    build: . # Build context is still alphachad directory
+    command: celery -A celery_app worker -l info
+    environment:
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - SUPABASE_URL=${SUPABASE_URL}
+      - SUPABASE_ANON_KEY=${SUPABASE_ANON_KEY}
+    depends_on:
+      - redis
+
+volumes:
+  redis_data:
