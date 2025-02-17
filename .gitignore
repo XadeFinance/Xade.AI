@@ -2,3 +2,4 @@
 alphachad/.env
 /alphachad/pipeline/__pycache__
 alphachad/agent-server.pem
+/alphachad/__pycache__
