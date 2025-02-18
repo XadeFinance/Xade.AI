@@ -176,11 +176,6 @@
         "default": "10"
       },
       {
-        "name": "desc",
-        "description": "Pass any value as desc and the output will be reversed (descending)",
-        "type": "boolean"
-      },
-      {
         "name": "page",
         "description": "When using limit, set the page of results to display, pages start at 0",
         "default": "0"
@@ -509,11 +504,6 @@
         "description": "limit the number of results. Default is 10 maximum is 100 per page.",
         "type": "number",
         "default": "10"
-      },
-      {
-        "name": "desc",
-        "description": "Pass any value as desc and the output will be reversed (descending)",
-        "type": "boolean"
       },
       {
         "name": "page",
@@ -897,11 +887,6 @@
         "description": "limit the number of results. Default is 10 maximum is 100 per page.",
         "type": "number",
         "default": "10"
-      },
-      {
-        "name": "desc",
-        "description": "Pass any value as desc and the output will be reversed (descending)",
-        "type": "boolean"
       },
       {
         "name": "page",

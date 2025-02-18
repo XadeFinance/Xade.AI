@@ -57,8 +57,6 @@ class Agent:
     self.response_template = response_template
     self.tweet_template = tweet_template
 
-
-
   def create_process(self):
     master_llm_prompt = [
       SystemMessagePromptTemplate.from_template(self.master_llm_system_template).format(sectors=self.sectors),
@@ -70,8 +68,6 @@ class Agent:
     
     master_output = self.LLM.invoke(master_llm_prompt)
     return master_output.content
-
-
 
   def create_apis(self, master_output):
 
@@ -141,7 +137,6 @@ class Agent:
     return api_calls
   
 
-
   def execute_parent_calls(self, api_calls):
     header_map = {
         "lunarcrush": self.lunarcrush_headers,
@@ -176,7 +171,6 @@ class Agent:
     return results
   
 
-
   def aggregate_tokens_simple(self, obj, avoid_tokens, collected=None):
       if collected is None:
           collected = {}
@@ -194,7 +188,6 @@ class Agent:
       return collected
   
 
-
   def get_top_tokens(self, parent_api_results, top_n=5):
       
       valid_coins = self.load_valid_coins(self.mobula_coins, self.lunarcrush_coins)
@@ -204,6 +197,7 @@ class Agent:
       valid_set = {coin.upper() for coin in valid_coins}
 
       aggregated = self.aggregate_tokens_simple(parent_api_results, avoid_set)
+
       
       filtered_tokens = []
       for symbol, token in aggregated.items():
@@ -211,39 +205,58 @@ class Agent:
               filtered_tokens.append(token)
           if len(filtered_tokens) >= top_n:
               break
+          
+      print("Top Tokens:", [token.get('symbol') for token in filtered_tokens])
       return filtered_tokens
   
-
 
   def update_nested_calls(self, api_call, top_tokens):
     try:
         if not (isinstance(api_call, dict) and "nested_calls" in api_call and isinstance(api_call["nested_calls"], list)):
             return api_call
 
-        token_iter = iter([str(t.get("symbol", "")).upper().strip() for t in top_tokens if t.get("symbol")])
+        # Extract and validate token symbols
+        token_symbols = [str(t.get("symbol", "")).upper().strip() for t in top_tokens if t.get("symbol")]
+        print(f"Available tokens for replacement: {token_symbols}")
+        
         for nc in api_call["nested_calls"]:
             try:
+                # Check if endpoint has placeholders
+                endpoint = nc.get("endpoint", "")
+                has_endpoint_placeholders = False
+                if isinstance(endpoint, str):
+                    placeholder_count = len(re.findall(r":\w+", endpoint))
+                    has_endpoint_placeholders = placeholder_count > 0
+                    print(f"Found {placeholder_count} placeholders in endpoint: {endpoint}")
+
+                # If endpoint contains placeholders, handle them directly
+                if has_endpoint_placeholders and token_symbols:
+                    placeholders = re.findall(r"(:\w+)", endpoint)
+                    print(f"Endpoint placeholders to replace: {placeholders}")
+                    
+                    new_endpoint = endpoint
+                    for idx, placeholder in enumerate(placeholders):
+                        token = token_symbols[idx % len(token_symbols)]
+                        new_endpoint = new_endpoint.replace(placeholder, token)
+                        print(f"Replacing {placeholder} with {token}")
+                    
+                    print(f"Updated endpoint: {new_endpoint}")
+                    nc["endpoint"] = new_endpoint
+
+                # Handle the symbols parameter if it exists
                 if isinstance(nc.get("parameters"), dict) and "symbols" in nc["parameters"]:
-                    all_symbols = [str(t.get("symbol", "")).upper().strip() for t in top_tokens if t.get("symbol")]
-                    nc["parameters"]["symbols"] = ",".join(all_symbols)
+                    if token_symbols:
+                        nc["parameters"]["symbols"] = ",".join(token_symbols)
+                        print(f"Updated parameters.symbols with all tokens: {nc['parameters']['symbols']}")
+                    
             except Exception as e:
-                print("Error updating symbols parameter:", e)
-            
-            if self.contains_placeholder(nc):
-                try:
-                    token = next(token_iter)
-                except StopIteration:
-                    token = ""
-                updated = self.update_nested_call_placeholders(nc, token)
-                if isinstance(nc, dict) and isinstance(updated, dict):
-                    nc.clear()
-                    nc.update(updated)
+                print(f"Error processing nested call: {e}")
+                continue
+        
         return api_call
     except Exception as e:
-        print("Error updating nested calls:", e)
+        print(f"Error updating nested calls: {e}")
         return api_call
-    
-
 
   def update_api_calls(self, parent_api_calls, top_tokens):
     try:
@@ -257,7 +270,6 @@ class Agent:
         print("Error updating API calls:", e)
         return parent_api_calls
     
-
 
   def execute_nested_call(self, api_call):
       base_urls = {
@@ -287,7 +299,6 @@ class Agent:
           return None
       
 
-
   def execute_nested_calls(self, parent_api_calls):
       responses = []
       try:
@@ -306,7 +317,6 @@ class Agent:
           print(f"Error executing pipeline: {e}")
       return responses
   
-
 
   def get_analysis(self, top_tokens, nested_responses, master_output):
       
@@ -346,7 +356,6 @@ class Agent:
     tweet = self.LLM.invoke(tweet_prompt).content
     
     return tweet
-
 
   @staticmethod
   def extract_api_json(llm_output):
@@ -439,32 +448,7 @@ class Agent:
           return list(set.intersection(*valid_sets))
       else:
           return []
-      
-  @staticmethod
-  def update_placeholders_in_string(s, token):
-    try:
-        return re.sub(r":\w+", token, s)
-    except Exception as e:
-        print(f"Error updating string {s}: {e}")
-        return s
-  
-  @staticmethod 
-  def update_nested_call_placeholders(obj, token):
-      try:
-          if isinstance(obj, dict):
-              return {k: Agent.update_nested_call_placeholders(v, token) for k, v in obj.items()}
-          elif isinstance(obj, list):
-              return [Agent.update_nested_call_placeholders(item, token) for item in obj]
-          elif isinstance(obj, str):
-              if ":" in obj:
-                  return Agent.update_placeholders_in_string(obj, token)
-              return obj
-          else:
-              return obj
-      except Exception as e:
-          print(f"Error updating nested placeholder in {obj}: {e}")
-          return obj
-      
+
   @staticmethod
   def contains_placeholder(obj):
       try:

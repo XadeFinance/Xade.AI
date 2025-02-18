@@ -3,3 +3,6 @@ alphachad/.env
 /alphachad/pipeline/__pycache__
 alphachad/agent-server.pem
 /alphachad/__pycache__
+alphachad/mobula-data.json
+alphachad/lunarcrush-data.json
+/xade-auth

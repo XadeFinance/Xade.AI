@@ -6,3 +6,4 @@ Work On:
 - Recurring everything
 - Agent Auto-Run
 - Add try with $ sign for symbols
+- Check out Functions

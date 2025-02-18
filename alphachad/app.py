@@ -1,8 +1,8 @@
 from flask import Flask, render_template, request, jsonify
-from pipeline.agent import Agent
+from pipeline.agent import Agent, ChatOpenAI # Import Agent and ChatOpenAI
 import langchain
 import os
-from langchain_openai import ChatOpenAI
+from langchain_openai import ChatOpenAI as LangchainChatOpenAI # Rename to avoid conflict
 from langchain.prompts import SystemMessagePromptTemplate, HumanMessagePromptTemplate, ChatPromptTemplate
 from langchain.schema import SystemMessage, HumanMessage
 from langchain.memory import ConversationBufferMemory
@@ -16,17 +16,20 @@ import requests
 import pipeline.fewshots
 import pipeline.prompts
 import pipeline.variables
-from supabase import create_client, Client 
+from supabase import create_client, Client
 import datetime
+from celery_app import celery_app # Import celery_app for dynamic scheduling
+from celery.schedules import crontab # Import crontab for dynamic scheduling
+import data_cycle
 
-app = Flask(__name__) 
+app = Flask(__name__)
 
 supabase_url: str = os.environ.get("SUPABASE_PROJECT_URL")
 supabase_key: str = os.environ.get("SUPABASE_ANON_KEY")
 supabase: Client = create_client(supabase_url, supabase_key)
 
-MOBULA_DATA_FILE = "pipeline/mobula-data.json"
-LUNARCRUSH_DATA_FILE = "pipeline/lunarcrush-data.json"
+MOBULA_DATA_FILE = "./pipeline/mobula-data.json"
+LUNARCRUSH_DATA_FILE = "./pipeline/lunarcrush-data.json"
 
 
 def load_local_data(provider):
@@ -47,7 +50,7 @@ def save_local_data(provider, endpoint_data):
 
 @app.route('/agent/create', methods=['POST'])
 def create_agent():
-    try: 
+    try:
         load_dotenv()
         app.logger.info("Starting API request")
 
@@ -62,12 +65,11 @@ def create_agent():
         if not query:
             return jsonify({"error": "No query provided"}), 400
 
-        character = data.get('character', 'Degen Analyst')    
-
+        character = data.get('character', 'Degen Analyst')
         agent_name = data.get('agent_name')
         if not agent_name:
             return jsonify({"error": "No agent name provided"}), 400
-        
+
         user_id = data.get('user_id')
 
         agent_description = data.get('agent_description')
@@ -78,11 +80,11 @@ def create_agent():
 
         app.logger.info(f"Processing query: {query} with character: {character}")
 
-        # Fix model name typo
-        llm = ChatOpenAI(
+        # Fix model name typo and use imported ChatOpenAI
+        llm = ChatOpenAI( # Use imported pipeline.agent.ChatOpenAI
             api_key=getenv("OPENAI_API_KEY"),
-            model_name="gpt-4o", 
-            verbose=True,
+            model_name="gpt-4o", # Corrected model name
+            verbose=False, # Set verbose to False for background tasks
             temperature=0
         )
 
@@ -104,47 +106,48 @@ def create_agent():
 
         data_guardrail_template = pipeline.prompts.data_guardrail_template
         analysis_system_template = pipeline.prompts.analysis_system_template
-        analysis_user_template = pipeline.prompts.analysis_human_template
+        analysis_user_template = pipeline.prompts.analysis_user_template
         response_template = pipeline.prompts.response_template
         tweet_template = pipeline.prompts.tweet_template
 
         app.logger.info("Creating agent")
-        agent = Agent(LLM=llm, query=query, character_description=character,
+        agent_instance = Agent( # Use imported pipeline.agent.Agent, rename to agent_instance to avoid shadowing
+                    LLM=llm, query=query, character_description=character,
                     lunarcrush_endpoints=lunarcrush_endpoints, mobula_endpoints=mobula_endpoints,
                     sectors=sectors, blockchain_ids=blockchain_ids, sorting_parameters=sorting_parameters, avoid_tokens=avoid_tokens,
                     master_llm_system_template=master_llm_system_template, master_llm_user_template=master_llm_user_template, master_llm_fewshot=master_llm_fewshot,
                     data_agent_system_template=data_agent_system_template, data_agent_user_template=data_agent_user_template, data_agent_fewshot=data_agent_fewshot, data_agent_example_output=data_agent_example_output,
                     data_guardrail_template=data_guardrail_template, analysis_system_template=analysis_system_template, analysis_user_template=analysis_user_template,
-                    response_template=response_template, tweet_template=tweet_template  
+                    response_template=response_template, tweet_template=tweet_template,
                     )
-        
-        master_output =  agent.create_process()
+
+        master_output =  agent_instance.create_process()
 
         about_agent = master_output
 
-        apis = agent.create_apis(master_output)
+        apis = agent_instance.create_apis(master_output)
 
         app.logger.info(apis)
 
-        parent_call = agent.execute_parent_calls(agent.form_parent_calls(apis))
+        parent_call = agent_instance.execute_parent_calls(agent_instance.form_parent_calls(apis)) # Use agent_instance
 
         app.logger.info(parent_call)
 
-        top_tokens = agent.get_top_tokens(parent_call, top_n=5)
+        top_tokens = agent_instance.get_top_tokens(parent_call, top_n=5) # Use agent_instance
 
         app.logger.info(top_tokens)
 
-        apis = agent.update_api_calls(apis, top_tokens)
+        apis = agent_instance.update_api_calls(apis, top_tokens) # Use agent_instance
 
         app.logger.info(apis)
 
-        agent_apis = apis
+        agent_apis = apis # capture updated apis
 
-        nested_call = agent.execute_nested_calls(apis)
+        nested_call = agent_instance.execute_nested_calls(apis) # Use agent_instance
 
-        analysis = agent.get_analysis(top_tokens, nested_call, master_output)
+        analysis = agent_instance.get_analysis(top_tokens, nested_call, master_output) # Use agent_instance
 
-        tweet = agent.create_tweet(analysis)
+        tweet = agent_instance.create_tweet(analysis) # Use agent_instance
 
         agent_status = "ACTIVE"
 
@@ -153,13 +156,13 @@ def create_agent():
         agent_data = {
             "agent_name": agent_name,
             "user_id": user_id,
-            "agent_apis": agent_apis,
+            "agent_apis": agent_apis, # Use the updated agent_apis here
             "twitter": "NA",
             "description": agent_description,
             "query": query,
             "chat_url": chat_url,
             "image": image,
-            "about_agent": about_agent,
+            "about_agent": about_agent, # Store about_agent here
             "agent_status": agent_status,
             "last_run": lastrun,
             "character": character,
@@ -184,7 +187,7 @@ def create_agent():
         extract_endpoints(agent_apis, all_endpoints_to_call)
 
         apis_to_call_inserts = []
-        for endpoint in all_endpoints_to_call: 
+        for endpoint in all_endpoints_to_call:
             apis_to_call_inserts.append({
                 'agent_id': new_agent_id,
                 'endpoint': endpoint
@@ -196,7 +199,7 @@ def create_agent():
         terminal_object = {
             "agent_id": new_agent_id,
             "created_at": lastrun,
-            "tweet_content": tweet,
+            "tweet_content": "Agent Created, first tweet will be generated shortly", # Initial message
             "posted": "FALSE"
         }
 
@@ -204,7 +207,29 @@ def create_agent():
 
         app.logger.info(response_terminal)
 
-        return tweet
+        # Dynamic Scheduling Logic - Add schedule for new agent
+        created_agent_timestamp = datetime.datetime.fromisoformat(new_agent['created_at'])
+        creation_minute = created_agent_timestamp.minute
+
+        task_name = f'process-agent-task-agent-{new_agent_id}' # Unique task name
+
+        app.logger.info(f"Adding dynamic schedule for agent ID: {new_agent_id}, to run at minute: {creation_minute} of every hour.")
+        celery_app.add_periodic_task(
+            crontab(minute=creation_minute),
+            data_cycle.process_agent_task, # Pass task function directly
+            kwargs={'agent_id': new_agent_id},
+            name=task_name  # Comment out name again for this test
+        )
+        app.logger.info(f"Dynamic schedule added for agent ID: {new_agent_id}, to run at minute: {creation_minute} of every hour.")
+
+
+        # Immediately trigger the task for the newly created agent for the first run
+        from data_cycle import process_agent_task # Import here to avoid circular import during startup
+        process_agent_task.delay(agent_id=new_agent_id) # Run immediately
+
+
+        return jsonify(tweet), 200 # Return tweet content, not just "tweet" string
+
 
     except json.JSONDecodeError as e:
         app.logger.error(f"JSON decode error: {str(e)}")
@@ -212,7 +237,7 @@ def create_agent():
     except Exception as e:
         app.logger.error(f"Error processing request: {str(e)}")
         return jsonify({"error": str(e)}), 500
-     
+
 
 if __name__ == '__main__':
     if not os.path.exists(MOBULA_DATA_FILE):
