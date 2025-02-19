@@ -1,5 +1,5 @@
-ACTION LIST:
-
+**ACTION LIST:**
+<br>
 - Setting up entirely new testing environment
 - Separating Indentity Prompt and Plan-of-Execution Prompt.
 - Add Few-Shot Chroma
