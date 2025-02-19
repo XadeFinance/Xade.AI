@@ -23,8 +23,14 @@ celery_app.conf.beat_schedule = {
 }
 celery_app.conf.timezone = 'UTC'
 
-print(f"Celery App Instance in celery_app.py: {celery_app}") # Debug print
+# Redbeat Configuration - ADD THESE LINES:
+celery_app.conf.beat_scheduler = 'redbeat.RedBeatScheduler'
+celery_app.conf.redbeat_redis_url = CELERY_BROKER_URL 
+
+print(f"Celery App Instance in celery_app.py: {celery_app}")
 print("Registered Celery tasks:", celery_app.tasks.keys()) # Check registered tasks
+
+celery_app.autodiscover_tasks(force=True)
 
 if __name__ == '__main__':
     celery_app.start()

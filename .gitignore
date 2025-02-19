@@ -3,6 +3,7 @@
 /pipeline/__pycache__
 agent-server.pem
 __pycache__
-/mobula-data.json
-lunarcrush-data.json
+/pipeline/mobula-data.json
+/pipeline/lunarcrush-data.json
 xade-auth
+*.swp

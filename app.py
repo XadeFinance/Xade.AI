@@ -21,6 +21,8 @@ import datetime
 from celery_app import celery_app # Import celery_app for dynamic scheduling
 from celery.schedules import crontab # Import crontab for dynamic scheduling
 import data_cycle
+from redbeat import RedBeatSchedulerEntry
+from redbeat.schedules import rrule
 
 app = Flask(__name__)
 
@@ -199,7 +201,7 @@ def create_agent():
         terminal_object = {
             "agent_id": new_agent_id,
             "created_at": lastrun,
-            "tweet_content": "Agent Created, first tweet will be generated shortly", # Initial message
+            "tweet_content": tweet, 
             "posted": "FALSE"
         }
 
@@ -211,20 +213,17 @@ def create_agent():
         created_agent_timestamp = datetime.datetime.fromisoformat(new_agent['created_at'])
         creation_minute = created_agent_timestamp.minute
 
-        task_name = f'process-agent-task-agent-{new_agent_id}' # Unique task name
+        app.logger.info(type(creation_minute))
 
-        app.logger.info(f"Adding dynamic schedule for agent ID: {new_agent_id}, to run at minute: {creation_minute} of every hour.")
-        celery_app.add_periodic_task(
-            crontab(minute=creation_minute),
-            data_cycle.process_agent_task, # Pass task function directly
-            kwargs={'agent_id': new_agent_id},
-            name=task_name  # Comment out name again for this test
-        )
+        task_name = f'process-agent-task-agent-{new_agent_id}' # Unique task name
+        interval = crontab(minute=f"{creation_minute}")
+
+        entry = RedBeatSchedulerEntry(task_name, "data_cycle.process_agent_task", interval, args=[new_agent_id], app=celery_app)
+        entry.save()
         app.logger.info(f"Dynamic schedule added for agent ID: {new_agent_id}, to run at minute: {creation_minute} of every hour.")
 
 
-        # Immediately trigger the task for the newly created agent for the first run
-        from data_cycle import process_agent_task # Import here to avoid circular import during startup
+        from data_cycle import process_agent_task
         process_agent_task.delay(agent_id=new_agent_id) # Run immediately
 
 
